@@ -1,1 +1,71 @@
+import cv2
+import numpy as np
+import spacy
+from tensorflow.keras import layers, models
 
+def extract_frames(video_path):
+    cap = cv2.VideoCapture(video_path)
+    frames = []
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frames.append(frame)
+
+    cap.release()
+    return frames
+
+def detect_objects(frame):
+    net = cv2.dnn.readNet("yolov3.weights", "yolov3.cfg")
+    layer_names = net.getLayerNames()
+    output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
+
+    height, width, channels = frame.shape
+    blob = cv2.dnn.blobFromImage(frame, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
+    net.setInput(blob)
+    outs = net.forward(output_layers)
+
+    objects = []
+    for out in outs:
+        for detection in out:
+            scores = detection[5:]
+            class_id = np.argmax(scores)
+            confidence = scores[class_id]
+            if confidence > 0.5:
+                center_x = int(detection[0] * width)
+                center_y = int(detection[1] * height)
+                w = int(detection[2] * width)
+                h = int(detection[3] * height)
+
+                x = int(center_x - w / 2)
+                y = int(center_y - h / 2)
+
+                objects.append({
+                    'class_id': class_id,
+                    'description': '',
+                    'x': x,
+                    'y': y,
+                    'w': w,
+                    'h': h
+                })
+
+    return objects
+
+def extract_keywords(text):
+    nlp = spacy.load("en_core_web_sm")
+    doc = nlp(text)
+    keywords = [token.text for token in doc if token.is_alpha]
+    return keywords
+
+model = models.Sequential()
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+model.fit(train_data, train_labels, epochs=10, validation_data=(val_data, val_labels))
+
+video_path = "example_video.mp4"
+frames = extract_frames(video_path)
+
+for frame in frames:
+    objects = detect_objects(frame)
+    for obj in objects:
+        keywords = extract_keywords(obj['description'])
